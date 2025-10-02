@@ -141,8 +141,7 @@ curl -X POST http://localhost:8080/api/auth/signup \
       "role": "DRIVER",
       "empID": "E26241",
       "department": "Operations"
-    }
-  }'
+    }'
 ```
 
 Response includes:
@@ -153,6 +152,52 @@ Response includes:
 
 ### 4. Cross-Client App Authentication
 When a user logs into one client app, they receive an access token that grants access to all other client apps within the same organization. Other client apps can validate the user by checking the access token claims.
+
+### Example Workflow for Cross App Access### Step 1: User logs into Client App A
+```bash
+POST /api/auth/login
+Headers:
+  apikey: app_client_A_apikey
+
+Body:
+{
+  "username": "john.doe",
+  "password": "password123"
+}
+
+Response:
+{
+  "accessToken": "token_for_app_A",
+  "refreshToken": "refresh_token_A",
+  ...
+  ...
+  ...
+}
+```
+
+### Step 2: User wants to access Client App B (SSO)
+```bash
+POST /api/auth/sso-exchange
+
+Body:
+{
+  "currentAccessToken": "token_for_app_A",
+  "targetClientAppApiKey": "app_clientB_apikey"
+}
+
+Response:
+{
+  "accessToken": "token_for_app_B",
+  "refreshToken": "refresh_token_B",
+  ...
+  ...
+  ...
+}
+```
+
+### Step 3: User accesses Client App B with new token
+The user can now use `token_for_app_B` to access Client App B's protected resources.
+
 
 ### 5. User Metadata Feature
 Client app users can include custom metadata during signup that gets:
@@ -253,33 +298,9 @@ cp .env.example .env
 - Update `.env` file with your database credentials
 
 #### 3. Run Application
-
-**Development Mode:**
 ```bash
-# Linux/Mac
-./start.sh
-
-# Windows
-start.bat
-
-# Or manually
-export SPRING_PROFILES_ACTIVE=dev
 ./mvnw spring-boot:run
 ```
-
-**Production Mode:**
-```bash
-# Set production environment
-export SPRING_PROFILES_ACTIVE=prod
-
-# Linux/Mac
-./start.sh
-
-# Windows
-set SPRING_PROFILES_ACTIVE=prod
-start.bat
-```
-
 #### 4. Test Endpoints
 Use the provided curl examples to test the API
 

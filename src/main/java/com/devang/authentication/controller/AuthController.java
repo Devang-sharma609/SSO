@@ -3,6 +3,7 @@ package com.devang.authentication.controller;
 import com.devang.authentication.dto.request.LoginRequest;
 import com.devang.authentication.dto.request.RefreshTokenRequest;
 import com.devang.authentication.dto.request.SignupRequest;
+import com.devang.authentication.dto.request.SsoTokenRequest;
 import com.devang.authentication.dto.response.ApiResponse;
 import com.devang.authentication.dto.response.AuthResponse;
 import com.devang.authentication.security.ApiKeyAuthenticationToken;
@@ -80,6 +81,19 @@ public class AuthController {
             return ResponseEntity.badRequest().body(ApiResponse.error("Invalid authentication"));
         }
         return ResponseEntity.ok(ApiResponse.success(authentication));
+    }
+
+    @PostMapping("/sso-exchange")
+    public ResponseEntity<ApiResponse<AuthResponse>> ssoExchange(@Valid @RequestBody SsoTokenRequest request) {
+        try {
+            AuthResponse response = authService.exchangeTokenForClientApp(
+                    request.getCurrentAccessToken(),
+                    request.getTargetClientAppApiKey()
+            );
+            return ResponseEntity.ok(ApiResponse.success("SSO token exchange successful", response));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("SSO token exchange failed", e.getMessage()));
+        }
     }
 }
 

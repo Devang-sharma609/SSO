@@ -17,7 +17,9 @@ import java.util.Map;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", uniqueConstraints = {
+    @UniqueConstraint(name = "uk_username_client_app", columnNames = {"username", "client_app_id"})
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -27,7 +29,7 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String username;
     
     @Column(nullable = false)

@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -286,6 +288,105 @@ public class AuthService {
     @Transactional
     public void logout(String refreshToken) {
         refreshTokenRepository.revokeToken(refreshToken);
+    }
+
+    /**
+     * SSO Token Exchange: Allows a user authenticated in one client app to obtain an access token
+     * for another client app within the same organization.
+     * 
+     * @param currentAccessToken The current valid access token from the source client app
+     * @param targetClientAppApiKey The API key of the target client app
+     * @return AuthResponse containing new access token for the target client app
+     */
+    @Transactional
+    public AuthResponse exchangeTokenForClientApp(String currentAccessToken, String targetClientAppApiKey) {
+        // Validate the current access token
+        Map<String, Object> currentClaims;
+        try {
+            currentClaims = jwtUtilService.extractClaims(currentAccessToken);
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid or expired access token");
+        }
+
+        // Extract information from current token
+        String userType = (String) currentClaims.get("userType");
+        if (!"CLIENT_USER".equals(userType)) {
+            throw new RuntimeException("SSO is only available for client app users");
+        }
+
+        String userId = currentClaims.get("userId").toString();
+        String username = (String) currentClaims.get("username");
+        String currentOrgId = currentClaims.get("organizationId").toString();
+
+        // Validate target client app exists
+        ClientApp targetClientApp = clientAppRepository.findByClientAppApiKey(targetClientAppApiKey)
+                .orElseThrow(() -> new RuntimeException("Invalid target client app API key"));
+
+        // Verify both apps belong to the same organization
+        if (!targetClientApp.getOrganization().getId().toString().equals(currentOrgId)) {
+            throw new RuntimeException("Target client app does not belong to the same organization");
+        }
+
+        // Find the user in the current organization
+        User user = userRepository.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Verify user belongs to the same organization
+        if (!user.getOrganization().getId().toString().equals(currentOrgId)) {
+            throw new RuntimeException("User organization mismatch");
+        }
+
+        // Check if user already exists for the target client app
+        Optional<User> existingUserInTargetApp = userRepository.findByUsernameAndClientApp(username, targetClientApp);
+        
+        User targetUser;
+        if (existingUserInTargetApp.isPresent()) {
+            // User already has an account in the target app, use it
+            targetUser = existingUserInTargetApp.get();
+        } else {
+            // Create a new user entry for the target client app (auto-provisioning)
+            targetUser = new User();
+            targetUser.setUsername(user.getUsername());
+            targetUser.setPassword(user.getPassword()); // Same password
+            targetUser.setEmail(user.getEmail());
+            targetUser.setFirstName(user.getFirstName());
+            targetUser.setLastName(user.getLastName());
+            targetUser.setUserMetadata(user.getUserMetadata());
+            targetUser.setOrganization(targetClientApp.getOrganization());
+            targetUser.setClientApp(targetClientApp);
+            
+            targetUser = userRepository.save(targetUser);
+        }
+
+        // Generate new access token for target client app
+        Map<String, Object> newClaims = new HashMap<>();
+        newClaims.put("userId", targetUser.getId());
+        newClaims.put("username", targetUser.getUsername());
+        newClaims.put("userType", "CLIENT_USER");
+        newClaims.put("organizationId", targetClientApp.getOrganization().getId());
+        newClaims.put("organizationName", targetClientApp.getOrganization().getName());
+        newClaims.put("clientAppId", targetClientApp.getId());
+        if (targetUser.getUserMetadata() != null) {
+            newClaims.put("user_metadata", targetUser.getUserMetadata());
+        }
+
+        String newAccessToken = jwtUtilService.generateAccessToken(newClaims);
+        String newRefreshToken = jwtUtilService.generateRefreshToken();
+
+        // Save refresh token
+        RefreshToken rt = new RefreshToken();
+        rt.setToken(newRefreshToken);
+        rt.setUser(targetUser);
+        rt.setExpiryDate(LocalDateTime.now().plusSeconds(jwtUtilService.getRefreshExpirationSeconds()));
+        refreshTokenRepository.save(rt);
+
+        return AuthResponse.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .expiresIn(jwtUtilService.getAccessExpirationSeconds())
+                .userClaims(newClaims)
+                .clientAppApiKey(targetClientApp.getClientAppApiKey())
+                .build();
     }
 
 }

@@ -55,6 +55,14 @@ public class JwtUtilService {
                 .parseClaimsJws(token);
     }
 
+    public Claims extractClaims(String token) {
+        return Jwts.parser()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getPayload();
+    }
+
     public long getAccessExpirationSeconds() {
         return jwtProperties.getAccessTokenExpiration() / 1000;
     }
